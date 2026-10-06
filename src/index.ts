@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { sign, verify } from 'hono/jwt'
+import { homeHtml } from './templates/home'
 
 type Env = {
   DB: D1Database
@@ -9,11 +10,10 @@ type Env = {
 }
 
 const app = new Hono<{ Bindings: Env }>()
-
 app.use('*', logger())
 app.use('*', cors())
 
-app.get('/', (c) => c.json({ name: 'AuthHub Platform', status: 'ok', version: '0.1.0' }))
+app.get('/', (c) => c.html(homeHtml))
 app.get('/health', (c) => c.json({ ok: true, time: new Date().toISOString() }))
 
 async function hashPassword(password: string): Promise<string> {
@@ -35,7 +35,7 @@ app.post('/api/auth/register', async (c) => {
   try {
     const id = await createUser(c.env.DB, email, hash)
     const token = await sign({ sub: id, email, exp: Math.floor(Date.now()/1000)+60*60*24*7 }, c.env.JWT_SECRET)
-    return c.json({ id, email, token })
+    return c.json({ id, email, token, user: { id, email } })
   } catch (e: any) {
     if (e.message?.includes('UNIQUE')) return c.json({ error: 'Email already exists' }, 409)
     return c.json({ error: 'Failed', details: e.message }, 500)
