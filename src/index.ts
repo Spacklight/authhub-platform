@@ -16,36 +16,36 @@ async function getUserFromToken(c:any){
  const token=auth.replace(/^Bearer\s+/i,'').trim(); 
  if(!token) return {user:null, err:'Empty token'};
  try{ 
-   const payload=await verify(token, getSecret(c)); 
+   const payload=await verify(token, getSecret(c), 'HS256'); 
    const user=await c.env.DB.prepare('SELECT id,email FROM users WHERE id=?1').bind(payload.sub).first(); 
    if(!user) return {user:null, err:'User not found for sub '+payload.sub};
    return {user:{...user,payload}, err:null};
- }catch(e:any){ return {user:null, err:'Verify failed: '+(e.message||String(e))+' | secretLen='+getSecret(c).length}; }
+ }catch(e:any){ return {user:null, err:'Verify failed: '+(e.message||String(e))}; }
 }
 app.get('/', (c) => c.html(homeHtml))
 app.get('/dashboard', (c) => c.html(dashboardHtml('Developer')))
 app.get('/health', (c) => c.json({ ok: true, secretSet: !!c.env.JWT_SECRET, secretLen: getSecret(c).length }))
 app.get('/api/debug/verify', async (c) => {
-  const token=c.req.query('token') || c.req.header('Authorization')?.replace(/^Bearer\s+/i,'');
-  if(!token) return c.json({error:'No token provided'});
+  const token=c.req.query('token');
+  if(!token) return c.json({error:'No token query'});
   try{
-    const payload=await verify(token.trim(), getSecret(c));
-    return c.json({ok:true, payload, secretLen: getSecret(c).length});
+    const payload=await verify(token.trim(), getSecret(c), 'HS256');
+    return c.json({ok:true, payload});
   }catch(e:any){
-    return c.json({ok:false, error:e.message, secretLen: getSecret(c).length, secretPreview: getSecret(c).slice(0,4)+'...'});
+    return c.json({ok:false, error:e.message});
   }
 })
 app.post('/api/auth/register', async (c) => {
  const { email, password } = await c.req.json(); if(!email||!password||password.length<6) return c.json({error:'Invalid'},400);
  const hash=await hashPassword(password);
  try{ const id=crypto.randomUUID(); await c.env.DB.prepare('INSERT INTO users (id,email,password_hash,created_at) VALUES (?1,?2,?3,?4)').bind(id,email.toLowerCase(),hash,new Date().toISOString()).run();
- const token=await sign({sub:id,email,exp:Math.floor(Date.now()/1000)+60*60*24*7}, getSecret(c)); return c.json({token,user:{id,email}}) }catch(e:any){ if(e.message?.includes('UNIQUE')) return c.json({error:'Email exists'},409); return c.json({error:e.message},500) }
+ const token=await sign({sub:id,email,exp:Math.floor(Date.now()/1000)+60*60*24*7}, getSecret(c), 'HS256'); return c.json({token,user:{id,email}}) }catch(e:any){ if(e.message?.includes('UNIQUE')) return c.json({error:'Email exists'},409); return c.json({error:e.message},500) }
 })
 app.post('/api/auth/login', async (c) => {
  const { email, password } = await c.req.json(); const hash=await hashPassword(password);
  const user=await c.env.DB.prepare('SELECT id,email FROM users WHERE email=?1 AND password_hash=?2').bind(email.toLowerCase(),hash).first();
  if(!user) return c.json({error:'Invalid credentials'},401);
- const token=await sign({sub:(user as any).id,email:(user as any).email,exp:Math.floor(Date.now()/1000)+60*60*24*7}, getSecret(c));
+ const token=await sign({sub:(user as any).id,email:(user as any).email,exp:Math.floor(Date.now()/1000)+60*60*24*7}, getSecret(c), 'HS256');
  return c.json({token,user})
 })
 app.get('/api/auth/me', async (c) => {
