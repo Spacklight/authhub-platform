@@ -17,13 +17,12 @@ async function getUserFromToken(c:any){
 }
 
 app.get('/', (c) => c.html(homeHtml))
-app.get('/dashboard', async (c) => {
- const user=await getUserFromToken(c); if(!user) return c.redirect('/');
- return c.html(dashboardHtml((user as any).email))
+app.get('/dashboard', (c) => {
+ // Serve dashboard always - JS will check token in localStorage
+ return c.html(dashboardHtml('Developer'))
 })
 app.get('/health', (c) => c.json({ ok: true }))
 
-// Auth
 app.post('/api/auth/register', async (c) => {
  const { email, password } = await c.req.json();
  if(!email||!password||password.length<6) return c.json({error:'Invalid'},400);
@@ -41,11 +40,7 @@ app.post('/api/auth/login', async (c) => {
 app.get('/api/auth/me', async (c) => {
  const user=await getUserFromToken(c); if(!user) return c.json({error:'No token'},401); return c.json({user})
 })
-app.get('/api/users', async (c) => {
- const { results } = await c.env.DB.prepare('SELECT id,email,created_at FROM users ORDER BY created_at DESC LIMIT 100').all(); return c.json({users:results})
-})
 
-// Apps - Developer Projects
 app.get('/api/apps', async (c) => {
  const user=await getUserFromToken(c); if(!user) return c.json({error:'Unauthorized'},401);
  const { results } = await c.env.DB.prepare('SELECT * FROM apps WHERE owner_id=?1 ORDER BY created_at DESC').bind((user as any).id).all();
