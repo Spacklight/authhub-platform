@@ -1,0 +1,16 @@
+{
+  "name": "authhub-platform",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "JWT_SECRET": "change-me-in-production-please"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "authhub-db",
+      "database_id": "replace-with-real-id-after-creation"
+    }
+  ]
+}
