@@ -9,15 +9,32 @@ const app = new Hono<{ Bindings: Env }>()
 app.use('*', logger())
 app.use('*', cors({ origin: '*', allowHeaders: ['Content-Type','Authorization'], allowMethods: ['GET','POST','PATCH','OPTIONS'] }))
 async function hashPassword(p:string){const h=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(p));return [...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,'0')).join('')}
-function getSecret(c:any){return c.env.JWT_SECRET || 'change-me-in-production-please';}
+function getSecret(c:any){return (c.env.JWT_SECRET || 'change-me-in-production-please').trim();}
 async function getUserFromToken(c:any){
- const auth=c.req.header('Authorization'); if(!auth) return null;
- const token=auth.replace('Bearer ','').trim(); if(!token) return null;
- try{ const payload=await verify(token, getSecret(c)); const user=await c.env.DB.prepare('SELECT id,email FROM users WHERE id=?1').bind(payload.sub).first(); return user?{...user,payload}:null }catch{return null}
+ const auth=c.req.header('Authorization'); 
+ if(!auth) return {user:null, err:'Missing Authorization header'};
+ const token=auth.replace(/^Bearer\s+/i,'').trim(); 
+ if(!token) return {user:null, err:'Empty token'};
+ try{ 
+   const payload=await verify(token, getSecret(c)); 
+   const user=await c.env.DB.prepare('SELECT id,email FROM users WHERE id=?1').bind(payload.sub).first(); 
+   if(!user) return {user:null, err:'User not found for sub '+payload.sub};
+   return {user:{...user,payload}, err:null};
+ }catch(e:any){ return {user:null, err:'Verify failed: '+(e.message||String(e))+' | secretLen='+getSecret(c).length}; }
 }
 app.get('/', (c) => c.html(homeHtml))
 app.get('/dashboard', (c) => c.html(dashboardHtml('Developer')))
-app.get('/health', (c) => c.json({ ok: true, secretSet: !!c.env.JWT_SECRET }))
+app.get('/health', (c) => c.json({ ok: true, secretSet: !!c.env.JWT_SECRET, secretLen: getSecret(c).length }))
+app.get('/api/debug/verify', async (c) => {
+  const token=c.req.query('token') || c.req.header('Authorization')?.replace(/^Bearer\s+/i,'');
+  if(!token) return c.json({error:'No token provided'});
+  try{
+    const payload=await verify(token.trim(), getSecret(c));
+    return c.json({ok:true, payload, secretLen: getSecret(c).length});
+  }catch(e:any){
+    return c.json({ok:false, error:e.message, secretLen: getSecret(c).length, secretPreview: getSecret(c).slice(0,4)+'...'});
+  }
+})
 app.post('/api/auth/register', async (c) => {
  const { email, password } = await c.req.json(); if(!email||!password||password.length<6) return c.json({error:'Invalid'},400);
  const hash=await hashPassword(password);
@@ -32,21 +49,21 @@ app.post('/api/auth/login', async (c) => {
  return c.json({token,user})
 })
 app.get('/api/auth/me', async (c) => {
- const user=await getUserFromToken(c); if(!user) return c.json({error:'Unauthorized'},401); return c.json({user})
+ const {user, err}=await getUserFromToken(c); if(!user) return c.json({error:err},401); return c.json({user})
 })
 app.get('/api/apps', async (c) => {
- const user=await getUserFromToken(c); if(!user) return c.json({error:'Unauthorized'},401);
+ const {user, err}=await getUserFromToken(c); if(!user) return c.json({error:err},401);
  try{ const { results } = await c.env.DB.prepare('SELECT * FROM apps WHERE owner_id=?1 ORDER BY created_at DESC').bind((user as any).id).all(); return c.json({apps:results}) }catch(e:any){ return c.json({error:'DB error: '+e.message},500) }
 })
 app.post('/api/apps', async (c) => {
- const user=await getUserFromToken(c); if(!user) return c.json({error:'Unauthorized'},401);
+ const {user, err}=await getUserFromToken(c); if(!user) return c.json({error:err},401);
  const { name, website_url } = await c.req.json(); if(!name) return c.json({error:'Name required'},400);
  const id=crypto.randomUUID(); const client_id='ah_'+crypto.randomUUID().replace(/-/g,'').slice(0,24); const client_secret='ahs_'+crypto.randomUUID().replace(/-/g,'')+crypto.randomUUID().replace(/-/g,'');
  await c.env.DB.prepare('INSERT INTO apps (id,owner_id,name,description,website_url,client_id,client_secret,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)').bind(id,(user as any).id,name,'',website_url||'',client_id,client_secret,new Date().toISOString()).run();
  const row=await c.env.DB.prepare('SELECT * FROM apps WHERE id=?1').bind(id).first(); return c.json({app:row})
 })
 app.patch('/api/apps/:id/providers', async (c) => {
- const user=await getUserFromToken(c); if(!user) return c.json({error:'Unauthorized'},401);
+ const {user, err}=await getUserFromToken(c); if(!user) return c.json({error:err},401);
  const { id } = c.req.param(); const body=await c.req.json(); const fields=[]; const vals=[];
  if('facebook_enabled' in body){fields.push('facebook_enabled=?'); vals.push(body.facebook_enabled?1:0);}
  if('github_enabled' in body){fields.push('github_enabled=?'); vals.push(body.github_enabled?1:0);}
