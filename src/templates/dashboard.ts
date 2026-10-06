@@ -4,7 +4,7 @@ export const dashboardHtml = (userEmail: string) => `<!DOCTYPE html>
 <body class="bg-zinc-950 text-white min-h-screen p-6">
 <div class="max-w-5xl mx-auto">
 <div class="flex justify-between items-center mb-8">
-<div><h1 class="text-2xl font-bold">AuthHub</h1><p class="text-sm text-zinc-400">Developer Dashboard — <span id="hdrEmail">${userEmail}</span></p></div>
+<div><h1 class="text-2xl font-bold">AuthHub</h1><p class="text-sm text-zinc-400">Developer Dashboard - <span id="hdrEmail">${userEmail}</span></p></div>
 <button onclick="localStorage.clear(); location.href='/'" class="px-4 py-2 bg-zinc-800 rounded-xl">Logout</button>
 </div>
 <div class="grid md:grid-cols-2 gap-6">
@@ -17,33 +17,35 @@ export const dashboardHtml = (userEmail: string) => `<!DOCTYPE html>
 </div>
 <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
 <h2 class="font-bold mb-2">How it works</h2>
-<p class="text-sm text-zinc-400">Firebase-style but for Facebook & GitHub login for your users.</p>
+<p class="text-sm text-zinc-400">Firebase-style but for Facebook & GitHub login.</p>
 </div>
 </div>
 <div id="apps" class="mt-8 grid gap-4"></div>
 </div>
 <script>
 function getToken(){return localStorage.getItem('token');}
-async function api(path,opts={}){
+async function api(path,opts){
  const t=getToken(); if(!t){location.href='/'; return {ok:false,data:{}};}
  opts.headers={...(opts.headers||{}),Authorization:'Bearer '+t,'Content-Type':'application/json'};
  const r=await fetch(path,opts); let data={}; try{data=await r.json();}catch{}
- return {ok:r.ok,data, status:r.status};
+ return {ok:r.ok,data,status:r.status};
 }
 async function loadApps(){
- const {ok,data,status}=await api('/api/apps');
+ const res=await api('/api/apps');
  const c=document.getElementById('apps');
- if(!ok){ c.innerHTML='<p class="text-red-400">Error '+status+': '+(data.error||'Unauthorized')+'<br>Token present: '+(getToken()?getToken().slice(0,20)+'...':'no')+'</p>'; return; }
+ if(!res.ok){ c.innerHTML='<p class="text-red-400">Error '+res.status+': '+(res.data.error||'Unauthorized')+'</p>'; return; }
  const me=await api('/api/auth/me'); if(me.ok) document.getElementById('hdrEmail').textContent=me.data.user.email;
- if(!data.apps.length){c.innerHTML='<p class="text-zinc-500">No projects yet</p>';return;}
- c.innerHTML=data.apps.map(a=>`<div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5"><h3 class="font-bold">\${a.name}</h3><p class="text-xs text-zinc-400">\${a.website_url||''}</p><div class="mt-3 bg-zinc-950 p-3 rounded-xl font-mono text-xs break-all">client_id: \${a.client_id}<br>secret: \${a.client_secret}</div><div class="mt-3 flex gap-4 text-xs"><label><input type="checkbox" \${a.facebook_enabled?'checked':''} onchange="toggle('\${a.id}','facebook',this.checked)"> Facebook</label><label><input type="checkbox" \${a.github_enabled?'checked':''} onchange="toggle('\${a.id}','github',this.checked)"> GitHub</label></div></div>`).join('');
+ if(!res.data.apps.length){c.innerHTML='<p class="text-zinc-500">No projects yet</p>';return;}
+ c.innerHTML=res.data.apps.map(function(a){
+   return '<div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5"><h3 class="font-bold">'+a.name+'</h3><p class="text-xs text-zinc-400">'+(a.website_url||'')+'</p><div class="mt-3 bg-zinc-950 p-3 rounded-xl font-mono text-xs break-all">client_id: '+a.client_id+'<br>secret: '+a.client_secret+'</div><div class="mt-3 flex gap-4 text-xs"><label><input type="checkbox" '+(a.facebook_enabled?'checked':'')+' onchange="toggle(\\''+a.id+'\\',\\'facebook\\',this.checked)"> Facebook</label><label><input type="checkbox" '+(a.github_enabled?'checked':'')+' onchange="toggle(\\''+a.id+'\\',\\'github\\',this.checked)"> GitHub</label></div></div>';
+ }).join('');
 }
 async function createApp(){
  const name=document.getElementById('appName').value, website=document.getElementById('website').value;
  const msg=document.getElementById('createMsg'); msg.textContent='Creating...';
- const {ok,data}=await api('/api/apps',{method:'POST',body:JSON.stringify({name,website_url:website})});
- msg.textContent=ok?'Created!':('Error: '+data.error);
- if(ok) loadApps();
+ const r=await api('/api/apps',{method:'POST',body:JSON.stringify({name:name,website_url:website})});
+ msg.textContent=r.ok?'Created!':('Error: '+r.data.error);
+ if(r.ok) loadApps();
 }
 async function toggle(id,p,en){ await api('/api/apps/'+id+'/providers',{method:'PATCH',body:JSON.stringify({[p+'_enabled']:en})}); }
 if(!getToken()) location.href='/'; else loadApps();
